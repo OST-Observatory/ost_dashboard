@@ -23,8 +23,8 @@ No system libraries are needed. The LDAP client (`ldap3`) is pure Python, so the
 ### 1) Virtualenv and dependencies
 
 ```bash
-git clone <repository-url> ost_oms_presence
-cd ost_oms_presence
+git clone <repository-url> ost_dashboard
+cd ost_dashboard
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
