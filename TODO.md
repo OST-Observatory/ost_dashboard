@@ -8,7 +8,8 @@
 - [ ] `/api/v2`: notification when an instance with a running session or planned night is disturbed (e.g. mail)
 - [ ] Apache: allow POSTs of mobile setups (other hosts than the OMS) once they exist
 - [ ] Agents stay silent while the OST_OCS server runs (`GET http://localhost:5148/api/health`, DSH-03), **step by step**:
-  - `telescope_agent.ps1`: as soon as OST_OCS runs on the OMS (it reports the mount via `/api/v2/status`)
+  - [x] `telescope_agent.ps1`: silent while `http://localhost:5148/api/health` answers (override: `OSTOCS_HEALTH_URL`),
+    because OST_OCS reports the mount via `/api/v2/status` (2026-11-20)
   - `autostart_client_prompt.ps1` (session prompt): only from ost_ocs stage 2, when OST_OCS runs the sessions
   - `host_status_agent.ps1`: stays until OST_OCS reports CPU/RAM/disk as well
 

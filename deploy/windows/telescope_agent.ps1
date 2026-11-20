@@ -55,12 +55,28 @@ try {
   Write-Host "ASCOM.DriverAccess not found. Falling back to COM ProgID ($DriverId)." -ForegroundColor Yellow
 }
 
+# DSH-03 (ost_ocs ADR 0008): while the OST_OCS server runs on this computer, it reports the mount itself via
+# /api/v2/status. Then this agent stays silent, so the dashboard gets no duplicate reports.
+$OcsHealthUrl = if ($env:OSTOCS_HEALTH_URL) { $env:OSTOCS_HEALTH_URL } else { 'http://localhost:5148/api/health' }
+$ocsSilent = $false
+
 $scope = $null
 $lastSent = Get-Date "2000-01-01"
 $lastRa = $null
 $lastDec = $null
 
 while ($true) {
+  $ocsRunning = $false
+  try { $ocsRunning = [bool](Invoke-RestMethod -Uri $OcsHealthUrl -TimeoutSec 2).ok } catch {}
+  if ($ocsRunning) {
+    if (-not $ocsSilent) { Write-Host "OST_OCS is running ($OcsHealthUrl): telescope agent silent" }
+    $ocsSilent = $true
+    Start-Sleep -Seconds 300
+    continue
+  }
+  if ($ocsSilent) { Write-Host "OST_OCS not running: telescope agent reports again"; $lastSent = Get-Date "2000-01-01" }
+  $ocsSilent = $false
+
   try {
     # Try connect every 10 minutes if not connected
     if (-not $scope) {
