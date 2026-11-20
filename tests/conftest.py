@@ -13,6 +13,7 @@ os.environ['ALLOW_OPEN_API'] = '1'
 os.environ['SECRET_TOKEN'] = 'test-secret'
 os.environ['DATA_FILE'] = _test_data.name
 os.environ['SESSION_LOG_FILE'] = _test_log.name
+os.environ['PREVIEW_DIR'] = tempfile.mkdtemp(prefix='dashboard-previews-')
 # Dashboard login is exercised against a fake directory (see fake_ldap), so no
 # LDAP server is needed; the app still runs its full login code path.
 os.environ['SESSION_SECRET'] = 'test-session-secret'

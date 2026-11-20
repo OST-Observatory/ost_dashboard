@@ -26,6 +26,7 @@ from functools import wraps
 from urllib.parse import quote, urlparse
 from uuid import uuid4
 
+import api_v2
 import ldap_auth
 
 log = logging.getLogger(__name__)
@@ -72,6 +73,18 @@ try:
     TELESCOPE_STATUS_TTL_SEC = int(os.getenv('TELESCOPE_STATUS_TTL_SEC', '2400'))
 except ValueError:
     TELESCOPE_STATUS_TTL_SEC = 2400
+
+# /api/v2 (OST_OCS instances, see api_v2.py)
+try:
+    V2_STALE_AFTER_SEC = int(os.getenv('V2_STALE_AFTER_SEC', '120'))
+except ValueError:
+    V2_STALE_AFTER_SEC = 120
+try:
+    V2_INSTANCE_TTL_SEC = int(os.getenv('V2_INSTANCE_TTL_SEC', str(7 * 24 * 3600)))
+except ValueError:
+    V2_INSTANCE_TTL_SEC = 7 * 24 * 3600
+PREVIEW_DIR = os.getenv('PREVIEW_DIR', os.path.join(os.path.dirname(os.path.abspath(DATA_FILE)), 'previews'))
+MAX_PREVIEW_BYTES = 2 * 1024 * 1024
 
 if not SECRET_TOKEN and not ALLOW_OPEN_API:
     sys.exit(
@@ -346,6 +359,17 @@ def append_session_log(end_reason, end_iso=None):
         entry['durationSec'],
         end_reason,
     )
+
+
+def append_log_entry(entry):
+    """Append a ready-made entry (e.g. an OST_OCS session from /api/v2) to the session log."""
+    with log_lock:
+        log_data = _load_session_log()
+        log_data.setdefault('entries', []).append(entry)
+        _save_session_log(log_data)
+    log.info('Session log: user=%s target=%s duration=%ss reason=%s instance=%s',
+             entry.get('user'), entry.get('target'), entry.get('durationSec'), entry.get('endReason'),
+             entry.get('instanceId'))
 
 
 def end_session(end_reason='release', end_iso=None):
@@ -875,6 +899,24 @@ def release():
     return jsonify({'ok': True})
 
 
+v2_context = api_v2.Context(
+    state=state,
+    state_lock=state_lock,
+    save_state=save_state,
+    require_token=require_token,
+    login_required=login_required,
+    append_log_entry=append_log_entry,
+    now_iso=now_iso,
+    utc_now=utc_now,
+    parse_iso_utc=parse_iso_utc,
+    stale_after_sec=V2_STALE_AFTER_SEC,
+    instance_ttl_sec=V2_INSTANCE_TTL_SEC,
+    preview_dir=PREVIEW_DIR,
+    max_preview_bytes=MAX_PREVIEW_BYTES,
+)
+app.register_blueprint(api_v2.create_blueprint(v2_context))
+
+
 def cleaner_loop():
     prune_counter = 0
     while True:
@@ -896,7 +938,10 @@ def cleaner_loop():
             prune_counter += 1
             if prune_counter >= 6:
                 prune_counter = 0
-                if prune_stale_monitoring(now):
+                pruned = prune_stale_monitoring(now)
+                # OST_OCS instances: sessions are never ended here (ADR 0008), only silent instances forgotten
+                pruned = api_v2.prune(v2_context, now) or pruned
+                if pruned:
                     save_state()
         time.sleep(10)
 

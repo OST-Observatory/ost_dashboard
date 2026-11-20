@@ -621,6 +621,9 @@ The camera notice at `templates/datenschutz.html` is deliberately untouched: it 
 | `HOST_STATUS_TTL_SEC` | `3600` | Remove stale host entries after this age |
 | `TELESCOPE_STATUS_TTL_SEC` | `2400` | Remove stale telescope entries after this age |
 | `CAMERA_MEDIA_DIR` | `/var/lib/observatory_cameras` | Local dev fallback for camera files |
+| `V2_STALE_AFTER_SEC` | `120` | `/api/v2`: an OST_OCS instance without status for longer is shown as disturbed |
+| `V2_INSTANCE_TTL_SEC` | `604800` | `/api/v2`: forget instances without session after this silence (7 days) |
+| `PREVIEW_DIR` | `<dir of DATA_FILE>/previews` | `/api/v2`: last preview JPEG per instance (overwritten, max 2 MB) |
 
 Dashboard login:
 
@@ -646,12 +649,36 @@ Dashboard login:
 Production: set `SECRET_TOKEN`, `SESSION_SECRET` and the `LDAP_*` block in `observatory_presence.env`, and **do not** set `ALLOW_OPEN_API` or `ALLOW_ANONYMOUS_DASHBOARD`.
 
 ---
+## API v2 for OST_OCS
+
+The observatory control software [OST_OCS](https://github.com/OST-Observatory/ost_ocs) reports to `/api/v2`
+(ost_ocs ADR 0008; payloads: `ost_ocs/docs/schnittstellen/dashboard_v2.md`). The old endpoints stay for the
+PowerShell agents.
+
+| Endpoint | Auth | Purpose |
+|----------|------|---------|
+| `POST /api/v2/sessions` | token | Start a session of an instance (`instanceId`, observers by **first name**, session type, project) → `sessionId` |
+| `POST /api/v2/sessions/<id>/end` | token | End it; the entry goes into the session log (with `instanceId`, `sessionType`) |
+| `POST /api/v2/status` | token | Status every 10–30 s and on changes; doubles as heartbeat |
+| `POST /api/v2/preview?instanceId=…` | token | Small JPEG of the last frame (body = JPEG) |
+| `GET /api/v2/instances` | login | Instances for the dashboard tiles, with `disturbed` / `secondsSinceLastSeen` |
+| `GET /api/v2/preview/<instanceId>.jpg` | login | The preview image |
+
+- **No automatic session end:** if the status stops, the tile shows *Disturbed: no connection for …* but the
+  session continues (unlike `/heartbeat` + `HEARTBEAT_TIMEOUT`). Only OST_OCS ends it.
+- **Several instances** (dome, later mobile setups) are kept apart by `instanceId`.
+- **Apache:** the existing `<Limit POST>` (OMS only) also covers `/api/v2`. Mobile setups posting from other
+  hosts need their address added there.
+- **Data protection:** only first names; preview images show the sky, no persons.
+
+---
 ## Session log
 
 When a session ends (`/release`, heartbeat timeout, or `force` override), an entry is appended to `SESSION_LOG_FILE` with:
 
 - `id` (UUID, for future edit/delete)
-- `user`, `target`, `start`, `end`, `durationSec`, `plannedEnd`, `endReason` (`release` | `timeout` | `force`)
+- `user`, `target`, `start`, `end`, `durationSec`, `plannedEnd`, `endReason` (`release` | `timeout` | `force`; from `/api/v2`: `normal` | `timeout` | `crash` | `manual`)
+- from `/api/v2` additionally `instanceId`, `sessionType`, `profile`, `note`; `user` = the observers' first names, `target` = project
 
 The dashboard loads `GET /logbook` (newest first, default last 100 entries). All entries are kept (no cap). Optional query: `GET /logbook?limit=50`.
 

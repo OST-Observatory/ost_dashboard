@@ -2,6 +2,16 @@
 
 ## Features
 
+- [x] `/api/v2` for OST_OCS (ost_ocs ADR 0008): sessions, status as heartbeat, preview, instance tiles (2026-11-20)
+- [ ] `/api/v2`: end a session by hand in the dashboard (ADR 0008: "Beendet wird eine Sitzung nur vom OCS-Server
+  oder von Hand im Dashboard"), with login + CSRF
+- [ ] `/api/v2`: notification when an instance with a running session or planned night is disturbed (e.g. mail)
+- [ ] Apache: allow POSTs of mobile setups (other hosts than the OMS) once they exist
+- [ ] Agents stay silent while the OST_OCS server runs (`GET http://localhost:5148/api/health`, DSH-03), **step by step**:
+  - `telescope_agent.ps1`: as soon as OST_OCS runs on the OMS (it reports the mount via `/api/v2/status`)
+  - `autostart_client_prompt.ps1` (session prompt): only from ost_ocs stage 2, when OST_OCS runs the sessions
+  - `host_status_agent.ps1`: stays until OST_OCS reports CPU/RAM/disk as well
+
 - [ ] Detect the connected camera.
 - [ ] Get the coordinates from the mount while it is running:
   - check whether the coordinates change

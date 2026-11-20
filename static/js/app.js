@@ -21,6 +21,9 @@
 			release: 'Released',
 			timeout: 'Timeout',
 			force: 'Overwritten',
+			normal: 'Ended',
+			crash: 'Crash',
+			manual: 'Ended by hand',
 		};
 		return map[reason] || reason || '—';
 	}
@@ -346,7 +349,113 @@
 		});
 	}
 
+	// --- OST_OCS instances (/api/v2) -------------------------------------------------------
+	function chip(cls, text, dot = true) {
+		const el = document.createElement('span');
+		el.className = 'chip ' + cls;
+		if (dot) appendDotAndText(el, text); else el.textContent = text;
+		return el;
+	}
+	function fmtSilence(sec) {
+		if (sec === null || sec === undefined) return 'never';
+		if (sec < 120) return `${sec} s`;
+		if (sec < 7200) return `${Math.round(sec / 60)} min`;
+		return `${Math.round(sec / 3600)} h`;
+	}
+	function fmtNumber(v, digits, unit) {
+		return Number.isFinite(v) ? `${v.toFixed(digits)}${unit}` : '—';
+	}
+	const taskStateClass = { exposing: 'ok', waiting: 'mono', paused: 'warn', error: 'bad' };
+
+	function renderInstances(data) {
+		const list = $('ocs-list');
+		const empty = $('ocs-empty');
+		if (!list) return;
+		const items = (data && data.instances) || [];
+		list.innerHTML = '';
+		empty.style.display = items.length ? 'none' : '';
+		items.forEach((inst) => {
+			const tile = document.createElement('div');
+			tile.className = 'ocs-tile' + (inst.disturbed ? ' disturbed' : '');
+			const st = inst.status || {};
+
+			const head = document.createElement('div');
+			head.className = 'ocs-tile-head';
+			const h = document.createElement('h3');
+			h.textContent = inst.instanceId;
+			head.appendChild(h);
+			head.appendChild(inst.disturbed
+				? chip('bad', `Disturbed: no connection for ${fmtSilence(inst.secondsSinceLastSeen)}`)
+				: chip('ok', `Online (${fmtSilence(inst.secondsSinceLastSeen)} ago)`));
+			tile.appendChild(head);
+
+			const chips = document.createElement('div');
+			chips.className = 'chips';
+			const s = inst.session;
+			if (s) {
+				chips.appendChild(chip('warn', `Session: ${(s.observers || []).join(', ')}`));
+				chips.appendChild(chip('mono', `${s.sessionType}${s.project ? ' · ' + s.project : ''}`, false));
+				if (s.plannedEnd) chips.appendChild(chip('mono', `Planned end: ${formatDate(s.plannedEnd)}`, false));
+			} else {
+				chips.appendChild(chip('mono', 'No session', false));
+			}
+			if (st.instrument) chips.appendChild(chip('mono', st.instrument, false));
+			const m = st.mount;
+			if (m) {
+				const mountClass = m.connected === false ? 'bad' : (m.state === 'tracking' ? 'ok' : 'warn');
+				chips.appendChild(chip(mountClass, `Mount: ${m.connected === false ? 'not reachable' : (m.state || '—')}`));
+				chips.appendChild(chip('mono', `RA ${fmtNumber(m.raHours, 3, 'h')} Dec ${fmtNumber(m.decDeg, 2, '°')} (J2000)`, false));
+				if (m.pierSide) chips.appendChild(chip('mono', `Pier: ${m.pierSide}`, false));
+			}
+			if (st.safety && st.safety.state) {
+				chips.appendChild(chip(st.safety.state === 'ok' ? 'ok' : 'bad', `Safety: ${st.safety.state}`));
+			}
+			tile.appendChild(chips);
+
+			if (st.activity) {
+				const act = document.createElement('div');
+				act.className = 'ocs-activity';
+				act.textContent = st.activity;
+				tile.appendChild(act);
+			}
+
+			(st.backgroundTasks || []).forEach((t) => {
+				const row = document.createElement('div');
+				row.className = 'chips';
+				row.appendChild(chip(taskStateClass[t.state] || 'mono', `${t.name}: ${t.state}`));
+				if (t.detail) row.appendChild(chip('mono', t.detail, false));
+				if (Number.isFinite(t.framesSaved)) row.appendChild(chip('mono', `Frames: ${t.framesSaved} saved, ${t.framesDiscarded || 0} discarded`, false));
+				if (Number.isFinite(t.setPointC)) row.appendChild(chip('mono', `Cooling ${fmtNumber(t.sensorC, 1, ' °C')} / ${fmtNumber(t.setPointC, 0, ' °C')}, ${fmtNumber(t.coolerPercent, 0, ' %')}`, false));
+				if (t.lastFrameUtc) row.appendChild(chip('mono', `Last frame: ${formatDate(t.lastFrameUtc)}`, false));
+				tile.appendChild(row);
+			});
+
+			if (inst.preview && inst.preview.ts) {
+				const img = document.createElement('img');
+				img.className = 'ocs-preview';
+				img.alt = `Last frame of ${inst.instanceId}`;
+				img.loading = 'lazy';
+				img.src = `${basePath}/api/v2/preview/${encodeURIComponent(inst.instanceId)}.jpg?t=${encodeURIComponent(inst.preview.ts)}`;
+				tile.appendChild(img);
+			}
+			list.appendChild(tile);
+		});
+	}
+
+	async function fetchInstances() {
+		try {
+			const res = await fetch(`${basePath}/api/v2/instances`, { cache: 'no-store' });
+			if (res.status === 401) return goToLogin();
+			if (!res.ok) throw new Error(res.statusText);
+			renderInstances(await res.json());
+		} catch (e) {
+			console.error('instances fetch failed', e);
+		}
+	}
+
 	// initial + poll
+	fetchInstances();
+	setInterval(fetchInstances, 15000);
 	fetchStatus();
 	fetchLogbook();
 	setInterval(fetchStatus, 15000);
